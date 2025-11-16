@@ -24,7 +24,8 @@ class MainWindow(ctk.CTk):
         super().__init__()
 
         self.title("Twitch Video Downloader")
-        self.geometry("900x750")
+        self.geometry("950x800")
+        self.minsize(900, 700)  # Minimum window size
 
         # Set theme
         theme = config.get("theme", "dark")
@@ -62,6 +63,9 @@ class MainWindow(ctk.CTk):
         main_frame = ctk.CTkFrame(self)
         main_frame.pack(fill="both", expand=True, padx=10, pady=10)
 
+        # Header with Settings button
+        self._create_header(main_frame)
+
         # Input section
         self._create_input_section(main_frame)
 
@@ -82,6 +86,49 @@ class MainWindow(ctk.CTk):
 
         # Bottom buttons
         self._create_bottom_buttons(main_frame)
+
+    def _create_header(self, parent):
+        """Create header section with app title and settings button."""
+        header_frame = ctk.CTkFrame(parent)
+        header_frame.pack(fill="x", padx=5, pady=(5, 10))
+
+        # Title
+        title_label = ctk.CTkLabel(
+            header_frame,
+            text="Twitch Video Downloader",
+            font=("Arial", 18, "bold")
+        )
+        title_label.pack(side="left", padx=10, pady=10)
+
+        # Settings button (prominent in header)
+        settings_button = ctk.CTkButton(
+            header_frame,
+            text="⚙ Settings",
+            command=self._open_settings,
+            width=120,
+            height=35,
+            font=("Arial", 12, "bold"),
+            fg_color="#1f6aa5",
+            hover_color="#144870"
+        )
+        settings_button.pack(side="right", padx=10, pady=10)
+
+        # Credentials status indicator
+        creds = config.get_twitch_credentials()
+        if creds["client_id"] and creds["client_secret"]:
+            status_text = "✓ Credentials configured"
+            status_color = "green"
+        else:
+            status_text = "⚠ Configure credentials in Settings"
+            status_color = "orange"
+
+        self.creds_status_label = ctk.CTkLabel(
+            header_frame,
+            text=status_text,
+            font=("Arial", 10),
+            text_color=status_color
+        )
+        self.creds_status_label.pack(side="right", padx=10)
 
     def _create_input_section(self, parent):
         """Create URL input section."""
@@ -625,4 +672,21 @@ class MainWindow(ctk.CTk):
 
     def _open_settings(self):
         """Open settings window."""
-        SettingsWindow(self)
+        settings_window = SettingsWindow(self)
+
+        # Wait for settings window to close, then refresh credential status
+        self.wait_window(settings_window)
+        self._refresh_credential_status()
+
+    def _refresh_credential_status(self):
+        """Refresh the credential status indicator."""
+        if hasattr(self, 'creds_status_label'):
+            creds = config.get_twitch_credentials()
+            if creds["client_id"] and creds["client_secret"]:
+                status_text = "✓ Credentials configured"
+                status_color = "green"
+            else:
+                status_text = "⚠ Configure credentials in Settings"
+                status_color = "orange"
+
+            self.creds_status_label.configure(text=status_text, text_color=status_color)
