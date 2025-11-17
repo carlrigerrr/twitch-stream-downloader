@@ -104,6 +104,48 @@ class StreamlinkManager:
         except Exception as e:
             return False, str(e)
 
+    def check_video_available(self, video_url, timeout=15):
+        """
+        Check if a video has playable streams available.
+
+        Args:
+            video_url: URL of the video to check
+            timeout: Timeout in seconds
+
+        Returns:
+            tuple: (is_available, error_message)
+        """
+        try:
+            # Run streamlink to list available streams (no download)
+            result = subprocess.run(
+                ["streamlink", video_url],
+                capture_output=True,
+                text=True,
+                timeout=timeout
+            )
+
+            # Check if any streams were found
+            if "Available streams:" in result.stdout:
+                return True, ""
+            else:
+                # Parse error message
+                error = result.stderr.strip()
+                if "No playable streams" in error:
+                    return False, "No playable streams (subscriber-only, deleted, or geo-restricted)"
+                elif "Unable to find" in error:
+                    return False, "Video not found or deleted"
+                elif "error" in error.lower():
+                    # Get first line of error
+                    first_error = error.split('\n')[0] if error else "Unknown error"
+                    return False, first_error
+                else:
+                    return False, "Video not available for download"
+
+        except subprocess.TimeoutExpired:
+            return False, "Check timed out (video may be very long)"
+        except Exception as e:
+            return False, f"Error checking availability: {str(e)}"
+
     def download_video(self, task, progress_callback=None, completion_callback=None):
         """
         Download a video using streamlink.
@@ -138,9 +180,21 @@ class StreamlinkManager:
                         completion_callback(False, task)
                     return
 
+                # Check if video is available for download
+                logger.info(f"Checking video availability: {task.video.title}")
+                is_available, availability_error = self.check_video_available(task.video.url)
+                if not is_available:
+                    task.status = DownloadStatus.FAILED
+                    task.error_message = availability_error
+                    logger.error(f"Video not available: {task.video.title}")
+                    logger.error(f"Reason: {availability_error}")
+                    if completion_callback:
+                        completion_callback(False, task)
+                    return
+
                 # Update status
                 task.status = DownloadStatus.DOWNLOADING
-                logger.info(f"Starting download: {task.video.title}")
+                logger.info(f"Video is available - starting download: {task.video.title}")
                 logger.info(f"Video URL: {task.video.url}")
 
                 # Build streamlink command
