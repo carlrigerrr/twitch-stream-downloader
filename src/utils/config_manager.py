@@ -84,9 +84,20 @@ class ConfigManager:
         """Get a setting value."""
         return self.settings.get(key, default)
 
-    def set(self, key, value):
+    def set(self, key, value, auto_save=True):
         """Set a setting value."""
         self.settings[key] = value
+        if auto_save:
+            self.save_settings()
+
+    def update_many(self, updates):
+        """
+        Update multiple settings at once and save only once.
+
+        Args:
+            updates: Dictionary of key-value pairs to update
+        """
+        self.settings.update(updates)
         self.save_settings()
 
     def get_twitch_credentials(self):

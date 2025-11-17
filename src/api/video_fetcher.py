@@ -33,6 +33,7 @@ class VideoFetcher:
     def fetch_videos(self, category_url, filters):
         """
         Fetch videos from a Twitch category URL with filters.
+        Continuously fetches in batches of 100 until enough matching videos are found.
 
         Args:
             category_url: Twitch category URL
@@ -48,6 +49,7 @@ class VideoFetcher:
             return False, [], error
 
         logger.info(f"Fetching videos for game: {game_name}")
+        logger.info(f"Filter criteria: {filters.get_summary()}")
 
         # Get game ID
         game_id = self.client.get_game_id(game_name)
@@ -56,36 +58,50 @@ class VideoFetcher:
             logger.error(error_msg)
             return False, [], error_msg
 
-        # Fetch videos (fetch more than needed to account for filtering)
-        fetch_limit = filters.max_videos * 3  # Fetch 3x to ensure we have enough after filtering
-        raw_videos = self.client.get_videos(game_id, filters, max_results=fetch_limit)
+        # Fetch videos in batches until we have enough matches
+        matching_videos = []
+        total_fetched = 0
+        max_fetch_limit = 1000  # Safety limit to prevent infinite loops
+
+        logger.info(f"Starting continuous fetch - need {filters.max_videos} matching videos")
+
+        # Fetch videos in batches of 100 until we have enough matches
+        raw_videos = self.client.get_videos(game_id, filters, max_results=max_fetch_limit)
 
         if not raw_videos:
             error_msg = "No videos found for this category"
             logger.warning(error_msg)
             return False, [], error_msg
 
-        # Convert to Video objects
-        videos = []
+        logger.info(f"Fetched {len(raw_videos)} total videos from API")
+
+        # Convert to Video objects and apply filters
         for video_data in raw_videos:
             try:
                 video = Video.from_api_response(video_data)
-                videos.append(video)
+                total_fetched += 1
+
+                # Check if video matches filter criteria
+                if filters.matches_video(video):
+                    matching_videos.append(video)
+
+                    # Stop if we have enough matching videos
+                    if len(matching_videos) >= filters.max_videos:
+                        logger.info(f"Found {len(matching_videos)} matching videos after checking {total_fetched} total videos")
+                        break
+
             except Exception as e:
                 logger.error(f"Error parsing video data: {e}")
                 continue
 
-        logger.info(f"Parsed {len(videos)} videos from API response")
+        logger.info(f"Finished fetching. Checked {total_fetched} videos, found {len(matching_videos)} matches")
 
-        # Apply client-side filters
-        filtered_videos = self._apply_filters(videos, filters)
+        if not matching_videos:
+            error_msg = f"No videos match your filter criteria after checking {total_fetched} videos. Try relaxing your filters."
+            logger.warning(error_msg)
+            return False, [], error_msg
 
-        # Limit to max_videos
-        final_videos = filtered_videos[:filters.max_videos]
-
-        logger.info(f"After filtering: {len(final_videos)} videos match criteria")
-
-        return True, final_videos, ""
+        return True, matching_videos[:filters.max_videos], ""
 
     def _apply_filters(self, videos, filters):
         """

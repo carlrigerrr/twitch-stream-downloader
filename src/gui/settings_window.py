@@ -238,21 +238,25 @@ class SettingsWindow(ctk.CTkToplevel):
     def _save_settings(self):
         """Save settings to config."""
         try:
-            # Save credentials
-            config.set("twitch_client_id", self.client_id_var.get().strip())
-            config.set("twitch_client_secret", self.client_secret_var.get().strip())
+            # Prepare all settings updates
+            updates = {
+                # Credentials
+                "twitch_client_id": self.client_id_var.get().strip(),
+                "twitch_client_secret": self.client_secret_var.get().strip(),
+                # Download settings
+                "concurrent_downloads": int(self.concurrent_var.get()),
+                "retry_attempts": int(self.retry_var.get()),
+                "skip_duplicates": self.skip_duplicates_var.get(),
+                "create_subfolders": self.create_subfolders_var.get(),
+                "save_metadata": self.save_metadata_var.get(),
+                # Theme
+                "theme": self.theme_var.get()
+            }
 
-            # Save download settings
-            config.set("concurrent_downloads", int(self.concurrent_var.get()))
-            config.set("retry_attempts", int(self.retry_var.get()))
-            config.set("skip_duplicates", self.skip_duplicates_var.get())
-            config.set("create_subfolders", self.create_subfolders_var.get())
-            config.set("save_metadata", self.save_metadata_var.get())
+            # Update all settings at once (saves only once)
+            config.update_many(updates)
 
-            # Save theme
-            config.set("theme", self.theme_var.get())
-
-            logger.info("Settings saved successfully")
+            logger.info("All settings saved successfully")
 
             # Show success message
             self._update_status("✓ Settings saved successfully!", "green")
