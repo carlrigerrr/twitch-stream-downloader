@@ -57,6 +57,10 @@ class MainWindow(ctk.CTk):
         # Initialize download queue
         self._init_download_queue()
 
+        # Progress update timer
+        self.progress_update_timer = None
+        self.is_downloading = False
+
     def _create_widgets(self):
         """Create all UI widgets."""
         # Main container
@@ -337,7 +341,7 @@ class MainWindow(ctk.CTk):
     def _create_videos_list(self, parent):
         """Create videos list section."""
         list_frame = ctk.CTkFrame(parent)
-        list_frame.pack(fill="both", expand=True, padx=5, pady=5)
+        list_frame.pack(fill="x", padx=5, pady=5)  # Changed from fill="both", expand=True
 
         self.videos_label = ctk.CTkLabel(
             list_frame,
@@ -346,9 +350,9 @@ class MainWindow(ctk.CTk):
         )
         self.videos_label.pack(anchor="w", padx=10, pady=(10, 5))
 
-        # Scrollable frame for videos
-        self.videos_scroll = ctk.CTkScrollableFrame(list_frame, height=200)
-        self.videos_scroll.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        # Scrollable frame for videos - fixed height, no expansion
+        self.videos_scroll = ctk.CTkScrollableFrame(list_frame, height=250)
+        self.videos_scroll.pack(fill="x", padx=10, pady=(0, 10))
 
     def _create_progress_section(self, parent):
         """Create download progress section."""
@@ -554,7 +558,11 @@ class MainWindow(ctk.CTk):
         # Update UI
         self.download_button.configure(state="disabled")
         self.cancel_button.configure(state="normal")
-        self._update_progress()
+
+        # Start progress updates
+        self.is_downloading = True
+        self._update_progress()  # Initial update
+        self.progress_update_timer = self.after(1000, self._update_progress)  # Start periodic updates
 
         logger.info(f"Started downloading {len(selected)} videos")
 
@@ -590,9 +598,21 @@ class MainWindow(ctk.CTk):
         # Update progress bar
         self.progress_bar.set(progress / 100)
 
-        # Update labels
+        # Get currently downloading videos
+        active_downloads = self.download_queue.streamlink_manager.get_all_active_downloads()
+
+        # Update labels with current file info
+        if active_downloads:
+            current_file = active_downloads[0].video.title if active_downloads else "Unknown"
+            status_text = f"Downloading: {current_file}"
+            if len(active_downloads) > 1:
+                status_text += f" (+{len(active_downloads)-1} more)"
+            status_text += f" | {stats['active']} active, {stats['pending']} pending"
+        else:
+            status_text = f"Processing... ({stats['active']} active, {stats['pending']} pending)"
+
         self.progress_label.configure(
-            text=f"Downloading... ({stats['active']} active, {stats['pending']} pending)",
+            text=status_text,
             text_color="green"
         )
 
@@ -600,8 +620,18 @@ class MainWindow(ctk.CTk):
             text=f"{stats['completed']}/{stats['total']} videos | {progress:.1f}% complete | {stats['failed']} failed"
         )
 
+        # Schedule next update if still downloading
+        if self.is_downloading and stats['active'] > 0:
+            self.progress_update_timer = self.after(1000, self._update_progress)  # Update every second
+
     def _all_downloads_complete(self):
         """Handle all downloads completion."""
+        # Stop periodic updates
+        self.is_downloading = False
+        if self.progress_update_timer:
+            self.after_cancel(self.progress_update_timer)
+            self.progress_update_timer = None
+
         stats = self.download_queue.get_stats()
 
         self.progress_label.configure(
@@ -623,6 +653,12 @@ class MainWindow(ctk.CTk):
 
     def _cancel_downloads(self):
         """Cancel all downloads."""
+        # Stop periodic updates
+        self.is_downloading = False
+        if self.progress_update_timer:
+            self.after_cancel(self.progress_update_timer)
+            self.progress_update_timer = None
+
         if self.download_queue:
             self.download_queue.cancel_all()
             self.progress_label.configure(text="Downloads cancelled", text_color="red")
