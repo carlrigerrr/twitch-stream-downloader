@@ -115,6 +115,17 @@ class StreamlinkManager:
         """
         def run_download():
             try:
+                # Check if streamlink is installed
+                is_installed, version_or_error = self.check_streamlink_installed()
+                if not is_installed:
+                    task.status = DownloadStatus.FAILED
+                    task.error_message = f"Streamlink not installed: {version_or_error}"
+                    logger.error(f"Cannot download - {task.error_message}")
+                    logger.error("Install streamlink with: pip install streamlink")
+                    if completion_callback:
+                        completion_callback(False, task)
+                    return
+
                 # Ensure output directory exists
                 Path(task.output_folder).mkdir(parents=True, exist_ok=True)
 
@@ -130,18 +141,27 @@ class StreamlinkManager:
                 # Update status
                 task.status = DownloadStatus.DOWNLOADING
                 logger.info(f"Starting download: {task.video.title}")
+                logger.info(f"Video URL: {task.video.url}")
 
                 # Build streamlink command
                 video_url = task.video.url
+
+                # If quality is "best", let streamlink choose the best available
+                # Otherwise, try the specified quality with fallback to best
+                quality_arg = task.quality if task.quality else "best"
+
                 command = [
                     "streamlink",
                     video_url,
-                    task.quality,
+                    quality_arg,
                     "-o", task.output_file,
-                    "--force"  # Overwrite if exists
+                    "--force",  # Overwrite if exists
+                    "--twitch-disable-ads"  # Disable ad check
                 ]
 
                 # Start streamlink process
+                logger.info(f"Streamlink command: {' '.join(command)}")
+
                 task.process = subprocess.Popen(
                     command,
                     stdout=subprocess.PIPE,
@@ -150,8 +170,13 @@ class StreamlinkManager:
                     bufsize=1
                 )
 
+                # Collect stderr output for error reporting
+                stderr_output = []
+
                 # Monitor output for progress
                 for line in task.process.stderr:
+                    stderr_output.append(line.strip())
+
                     if task.cancelled:
                         task.process.terminate()
                         task.status = DownloadStatus.CANCELLED
@@ -159,6 +184,9 @@ class StreamlinkManager:
                         if completion_callback:
                             completion_callback(False, task)
                         return
+
+                    # Log streamlink output for debugging
+                    logger.debug(f"Streamlink: {line.strip()}")
 
                     # Parse progress from streamlink output
                     # Example: "Written 123.45 MB (12%) [1.23 MB/s]"
@@ -182,9 +210,14 @@ class StreamlinkManager:
                     if completion_callback:
                         completion_callback(True, task)
                 else:
+                    # Capture detailed error information
                     task.status = DownloadStatus.FAILED
-                    task.error_message = "Streamlink process failed"
+                    error_details = '\n'.join(stderr_output[-10:])  # Last 10 lines of stderr
+                    task.error_message = f"Streamlink failed (exit code {task.process.returncode})"
+
                     logger.error(f"Download failed: {task.video.title}")
+                    logger.error(f"Exit code: {task.process.returncode}")
+                    logger.error(f"Streamlink output:\n{error_details}")
 
                     if completion_callback:
                         completion_callback(False, task)
