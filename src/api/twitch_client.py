@@ -3,7 +3,7 @@ Twitch API client for authentication and API calls.
 """
 import requests
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from src.utils.logger import logger
 
 
@@ -163,8 +163,8 @@ class TwitchClient:
             all_videos = []
             cursor = None
 
-            # Calculate the date range
-            start_date = datetime.now() - timedelta(days=filters.days_back)
+            # Calculate the date range (use timezone-aware datetime to match Twitch API)
+            start_date = datetime.now(timezone.utc) - timedelta(days=filters.days_back)
 
             # Determine sort parameter
             sort_map = {
